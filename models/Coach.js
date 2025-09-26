@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const Athlete = require('../models/Athlete');
 
 const coachSchema = new mongoose.Schema({
   user: {
@@ -23,6 +24,12 @@ const coachSchema = new mongoose.Schema({
     type: String,
     default: "",
   },
+  athletes: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Athlete"
+    }
+  ],
   createdAt: {
     type: Date,
     default: Date.now,

@@ -6,8 +6,9 @@ const User = require('../models/User');
 // @route POST /api/coaches
 // @access Private
 const createCoachProfile = async (req, res) => {
+  console.log("REQ BODY:", req.body);
   try {
-    const { specialty, experience } = req.body;
+    const { specialization, experienceYears, certifications, bio } = req.body;
 
     const coachExists = await Coach.findOne({ user: req.user.id });
     if (coachExists) {
@@ -16,8 +17,10 @@ const createCoachProfile = async (req, res) => {
 
     const coach = new Coach({
       user: req.user.id,
-      specialty,
-      experience,
+      specialization,
+      experienceYears,
+      certifications,
+      bio,
     });
 
     await coach.save();
@@ -26,6 +29,7 @@ const createCoachProfile = async (req, res) => {
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
+
 
 // @desc Get coach profile
 // @route GET /api/coaches/:id

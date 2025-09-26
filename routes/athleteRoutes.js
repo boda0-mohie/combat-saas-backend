@@ -1,9 +1,12 @@
 // routes/athleteRoutes.js
 const express = require('express');
-const { getAthleteProfile, updateAthleteProfile } = require('../controllers/athleteController');
+const { getAthleteProfile, updateAthleteProfile, createAthleteProfile } = require('../controllers/athleteController');
 const { protect } = require('../middleware/authMiddleware');
 
 const router = express.Router();
+
+// Create athlete profile
+router.post("/", protect, createAthleteProfile);
 
 // Get athlete profile
 router.get('/:id', protect, getAthleteProfile);
