@@ -19,12 +19,7 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Password is required'],
       minlength: 6,
-    },
-    role: {
-      type: String,
-      enum: ['athlete', 'coach', 'admin'],
-      default: 'athlete',
-    },
+    }
   },
   { timestamps: true }
 );
@@ -37,11 +32,10 @@ userSchema.pre('save', async function (next) {
   next();
 });
 
-// Compare passwords (for login)
+// Compare passwords
 userSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
 const User = mongoose.model('User', userSchema);
-
 module.exports = User;

@@ -1,40 +1,28 @@
-const mongoose = require("mongoose");
+// models/NutritionPlan.js
+const mongoose = require('mongoose');
+
+const mealItemSchema = new mongoose.Schema({
+  food: { type: String, required: true },
+  quantity: { type: String, default: '' },
+}, { _id: false });
+
+const mealSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  items: { type: [mealItemSchema], default: [] },
+}, { _id: false });
 
 const nutritionPlanSchema = new mongoose.Schema({
-  athlete: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Athlete",
-    required: true,
-  },
-  coach: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Coach",
-  },
-  calories: {
-    type: Number,
-    required: true,
-  },
+  athlete: { type: mongoose.Schema.Types.ObjectId, ref: 'Athlete', required: true, index: true },
+  coach: { type: mongoose.Schema.Types.ObjectId, ref: 'Coach', index: true },
+  calories: { type: Number, required: true },
   macros: {
-    protein: Number,
-    carbs: Number,
-    fats: Number,
+    protein: { type: Number, default: 0 },
+    carbs: { type: Number, default: 0 },
+    fats: { type: Number, default: 0 },
   },
-  meals: [
-    {
-      name: String, // Breakfast, Lunch, Dinner, Snack
-      items: [
-        {
-          food: String,
-          quantity: String,
-        },
-      ],
-    },
-  ],
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
-});
+  meals: { type: [mealSchema], default: [] },
+}, { timestamps: true });
 
-const NutritionPlan = mongoose.model("NutritionPlan", nutritionPlanSchema);
-module.exports = NutritionPlan;
+nutritionPlanSchema.index({ athlete: 1 });
+
+module.exports = mongoose.model('NutritionPlan', nutritionPlanSchema);

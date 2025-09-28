@@ -1,5 +1,4 @@
 const mongoose = require("mongoose");
-const Athlete = require('../models/Athlete');
 
 const coachSchema = new mongoose.Schema({
   user: {
@@ -12,29 +11,16 @@ const coachSchema = new mongoose.Schema({
     enum: ["strength", "conditioning", "judo", "wrestling", "boxing", "karate", "nutrition"],
     default: "strength",
   },
-  experienceYears: {
-    type: Number,
-    required: true,
-  },
-  certifications: {
-    type: [String],
-    default: [],
-  },
-  bio: {
-    type: String,
-    default: "",
-  },
+  experienceYears: { type: Number, required: true },
+  certifications: { type: [String], default: [] },
+  bio: { type: String, default: "" },
   athletes: [
     {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Athlete"
     }
-  ],
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
-});
+  ]
+}, { timestamps: true });
 
 const Coach = mongoose.model("Coach", coachSchema);
 module.exports = Coach;

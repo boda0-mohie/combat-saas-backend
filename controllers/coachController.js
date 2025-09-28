@@ -1,22 +1,18 @@
-// controllers/coachController.js
 const Coach = require('../models/Coach');
-const User = require('../models/User');
+const Athlete = require('../models/Athlete');
 
-// @desc Create coach profile
-// @route POST /api/coaches
-// @access Private
+// Create coach profile
 const createCoachProfile = async (req, res) => {
-  console.log("REQ BODY:", req.body);
   try {
     const { specialization, experienceYears, certifications, bio } = req.body;
 
-    const coachExists = await Coach.findOne({ user: req.user.id });
+    const coachExists = await Coach.findOne({ user: req.user._id });
     if (coachExists) {
       return res.status(400).json({ message: 'Coach profile already exists' });
     }
 
     const coach = new Coach({
-      user: req.user.id,
+      user: req.user._id,
       specialization,
       experienceYears,
       certifications,
@@ -24,21 +20,18 @@ const createCoachProfile = async (req, res) => {
     });
 
     await coach.save();
-    res.status(201).json(coach);
+    res.status(201).json({ message: "Coach profile created", coach });
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
 
-
-// @desc Get coach profile
-// @route GET /api/coaches/:id
-// @access Private
+// Get coach profile
 const getCoachProfile = async (req, res) => {
   try {
     const coach = await Coach.findById(req.params.id)
       .populate('user', '-password')
-      .populate('athletes', 'name email');
+      .populate('athletes');
 
     if (!coach) {
       return res.status(404).json({ message: 'Coach not found' });
@@ -50,9 +43,7 @@ const getCoachProfile = async (req, res) => {
   }
 };
 
-// @desc Add athlete to coach
-// @route PUT /api/coaches/:id/add-athlete
-// @access Private
+// Add athlete to coach
 const addAthleteToCoach = async (req, res) => {
   try {
     const coach = await Coach.findById(req.params.id);
@@ -60,8 +51,7 @@ const addAthleteToCoach = async (req, res) => {
       return res.status(404).json({ message: 'Coach not found' });
     }
 
-    // فقط المدرب نفسه اللي يعدل قايمته
-    if (coach.user.toString() !== req.user.id) {
+    if (coach.user.toString() !== req.user._id.toString()) {
       return res.status(401).json({ message: 'Not authorized' });
     }
 
@@ -73,6 +63,13 @@ const addAthleteToCoach = async (req, res) => {
     if (!coach.athletes.includes(athleteId)) {
       coach.athletes.push(athleteId);
       await coach.save();
+
+      // كمان نربط الـ Athlete بالمدرب
+      const athlete = await Athlete.findById(athleteId);
+      if (athlete) {
+        athlete.coach = coach._id;
+        await athlete.save();
+      }
     }
 
     res.json({ message: 'Athlete added to coach', coach });

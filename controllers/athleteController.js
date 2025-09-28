@@ -1,32 +1,18 @@
 const User = require('../models/User');
 const Athlete = require("../models/Athlete");
 
-
-// @desc Create athlete profile for a user
-// @route POST /api/athletes
-// @access Private (athlete نفسه بعد التسجيل أو المدرب يعمل له profile)
+// Create athlete profile
 const createAthleteProfile = async (req, res) => {
-  console.log("REQ BODY:", req.body);
   try {
-    const { userId, sport, weight, height, experienceLevel, goals } = req.body;
+    const { sport, weight, height, experienceLevel, goals } = req.body;
 
-    // 1) اتأكد إن اليوزر موجود
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    // 2) اتأكد إن مفيش Athlete profile معمول له قبل كده
-    const existingAthlete = await Athlete.findOne({ user: userId });
+    const existingAthlete = await Athlete.findOne({ user: req.user._id });
     if (existingAthlete) {
-      return res
-        .status(400)
-        .json({ message: "Athlete profile already exists for this user" });
+      return res.status(400).json({ message: "Athlete profile already exists" });
     }
 
-    // 3) اعمل Athlete جديد مربوط باليوزر
     const athlete = new Athlete({
-      user: userId,
+      user: req.user._id,
       sport,
       weight,
       height,
@@ -35,24 +21,16 @@ const createAthleteProfile = async (req, res) => {
     });
 
     await athlete.save();
-
-    res
-      .status(201)
-      .json({ message: "Athlete profile created successfully", athlete });
+    res.status(201).json({ message: "Athlete profile created", athlete });
   } catch (err) {
-    res
-      .status(500)
-      .json({ message: "Server error", error: err.message });
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 };
 
-
-// @desc Get athlete profile
-// @route GET /api/athletes/:id
-// @access Private (athlete himself or coach)
+// Get athlete profile
 const getAthleteProfile = async (req, res) => {
   try {
-    const athlete = await User.findById(req.params.id).select('-password');
+    const athlete = await Athlete.findById(req.params.id).populate('user', '-password');
     if (!athlete) {
       return res.status(404).json({ message: 'Athlete not found' });
     }
@@ -62,25 +40,23 @@ const getAthleteProfile = async (req, res) => {
   }
 };
 
-// @desc Update athlete profile (like weight, height, goals)
-// @route PUT /api/athletes/:id
-// @access Private (athlete himself)
+// Update athlete profile
 const updateAthleteProfile = async (req, res) => {
   try {
-    const athlete = await User.findById(req.params.id);
+    const athlete = await Athlete.findById(req.params.id);
     if (!athlete) {
       return res.status(404).json({ message: 'Athlete not found' });
     }
 
-    if (athlete._id.toString() !== req.user.id) {
+    if (athlete.user.toString() !== req.user._id.toString()) {
       return res.status(401).json({ message: 'Not authorized' });
     }
 
-    const { weight, height, goal } = req.body;
+    const { weight, height, goals } = req.body;
 
     if (weight) athlete.weight = weight;
     if (height) athlete.height = height;
-    if (goal) athlete.goal = goal;
+    if (goals) athlete.goals = goals;
 
     await athlete.save();
     res.json({ message: 'Profile updated', athlete });
@@ -90,7 +66,7 @@ const updateAthleteProfile = async (req, res) => {
 };
 
 module.exports = {
+  createAthleteProfile,
   getAthleteProfile,
   updateAthleteProfile,
-  createAthleteProfile,
 };

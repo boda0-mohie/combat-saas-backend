@@ -3,7 +3,7 @@ const mongoose = require("mongoose");
 const athleteSchema = new mongoose.Schema({
   user: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: "User", // رابط بين اللاعب و الـ user اللي مسجل
+    ref: "User",
     required: true,
   },
   sport: {
@@ -11,29 +11,20 @@ const athleteSchema = new mongoose.Schema({
     enum: ["judo", "wrestling", "boxing", "karate", "MMA", "other"],
     default: "judo",
   },
-  weight: {
-    type: Number,
-    required: true,
-  },
-  height: {
-    type: Number,
-    required: true,
-  },
+  weight: { type: Number, required: true },
+  height: { type: Number, required: true },
   experienceLevel: {
     type: String,
     enum: ["beginner", "intermediate", "advanced", "professional"],
     default: "beginner",
   },
-  goals: {
-    type: [String], // ممكن يحط أكتر من هدف: ["lose fat", "gain muscle", "improve stamina"]
-    default: [],
+  goals: { type: [String], default: [] },
+  coach: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Coach",
+    default: null
   },
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
-});
+}, { timestamps: true });
 
 const Athlete = mongoose.model("Athlete", athleteSchema);
-
 module.exports = Athlete;

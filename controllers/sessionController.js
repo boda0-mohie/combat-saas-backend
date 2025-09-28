@@ -1,87 +1,88 @@
-const TrainingSession = require('../models/TrainingSession');
-const Athlete = require('../models/Athlete');
-const Coach = require('../models/Coach');
-const User = require('../models/User');
-
-// helper to get requester id and role (works whether protect middleware sets req.user as decoded or full user doc)
-const getRequester = async (req) => {
-  let requesterId = null;
-  let requesterRole = null;
-
-  if (!req.user) return { requesterId: null, requesterRole: null };
-
-  // if middleware set decoded object { id, role }
-  if (req.user.id) {
-    requesterId = req.user.id;
-    requesterRole = req.user.role;
-  } else if (req.user._id) {
-    requesterId = req.user._id.toString();
-    requesterRole = req.user.role;
-  } else {
-    // fallback (rare)
-    requesterId = String(req.user);
-  }
-
-  if (!requesterRole) {
-    const u = await User.findById(requesterId).select('role');
-    requesterRole = u ? u.role : null;
-  }
-
-  return { requesterId, requesterRole };
-};
+// controllers/sessionController.js
+const TrainingSession = require("../models/TrainingSession");
+const Athlete = require("../models/Athlete");
+const Coach = require("../models/Coach");
+const getUserRole = require("../utils/getUserRole");
+const mongoose = require("mongoose");
 
 // POST /api/sessions
 const createSession = async (req, res) => {
   try {
     const { athleteId, type, durationMinutes, metrics, notes, date } = req.body;
-    if (!athleteId) return res.status(400).json({ message: 'athleteId is required' });
+    if (!athleteId)
+      return res.status(400).json({ message: "athleteId is required" });
 
-    const athlete = await Athlete.findById(athleteId).populate('user');
-    if (!athlete) return res.status(404).json({ message: 'Athlete not found' });
+    const athlete = await Athlete.findById(athleteId)
+      .populate("user", "_id")
+      .lean();
+    if (!athlete) return res.status(404).json({ message: "Athlete not found" });
 
-    const { requesterId, requesterRole } = await getRequester(req);
+    const requesterId = req.user._id.toString();
+    const requesterRole = await getUserRole(requesterId);
 
-    // Authorization:
-    if (requesterRole === 'athlete' || requesterRole === 'player') {
-      // athlete must create for own profile
+    // Authorization
+    if (requesterRole === "athlete") {
       if (!athlete.user || athlete.user._id.toString() !== requesterId) {
-        return res.status(401).json({ message: 'Not authorized to create session for this athlete' });
+        return res
+          .status(401)
+          .json({
+            message: "Not authorized to create session for this athlete",
+          });
       }
-    } else if (requesterRole === 'coach') {
-      // coach must have athlete in his list
-      const coach = await Coach.findOne({ user: requesterId });
-      if (!coach) return res.status(401).json({ message: 'Coach profile not found' });
-      if (!coach.athletes.map(a => a.toString()).includes(athlete._id.toString())) {
-        return res.status(401).json({ message: 'Coach not assigned to this athlete' });
+    } else if (requesterRole === "coach") {
+      const coach = await Coach.findOne({ user: requesterId })
+        .select("athletes _id")
+        .lean();
+      if (!coach)
+        return res.status(401).json({ message: "Coach profile not found" });
+      if (
+        !coach.athletes
+          .map((a) => a.toString())
+          .includes(athlete._id.toString())
+      ) {
+        return res
+          .status(401)
+          .json({ message: "Coach not assigned to this athlete" });
       }
-    } else if (requesterRole === 'admin') {
-      // allowed
     } else {
-      return res.status(401).json({ message: 'Not authorized' });
+      return res.status(401).json({ message: "Not authorized" });
     }
 
     // set coach id if requester is coach
     let coachRef = null;
-    if (requesterRole === 'coach') {
-      const coachDoc = await Coach.findOne({ user: requesterId });
+    if (requesterRole === "coach") {
+      const coachDoc = await Coach.findOne({ user: requesterId })
+        .select("_id")
+        .lean();
       if (coachDoc) coachRef = coachDoc._id;
     }
 
-    const session = new TrainingSession({
+    const session = await TrainingSession.create({
       athlete: athlete._id,
-      coach: coachRef,
-      date: date ? new Date(date) : undefined,
+      coach: coachRef || undefined,
+      date: date ? new Date(date) : new Date(),
       type,
       durationMinutes,
       metrics,
       notes,
     });
 
-    await session.save();
-    res.status(201).json(session);
+    // return populated minimal session
+    const populated = await TrainingSession.findById(session._id)
+      .populate({
+        path: "athlete",
+        populate: { path: "user", select: "name email" },
+      })
+      .populate({
+        path: "coach",
+        populate: { path: "user", select: "name email" },
+      })
+      .lean();
+
+    res.status(201).json(populated);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error', error: err.message });
+    console.error("createSession error", err);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 };
 
@@ -89,64 +90,94 @@ const createSession = async (req, res) => {
 const getSessionsByAthlete = async (req, res) => {
   try {
     const athleteId = req.params.athleteId;
-    const athlete = await Athlete.findById(athleteId).populate('user');
-    if (!athlete) return res.status(404).json({ message: 'Athlete not found' });
+    const athlete = await Athlete.findById(athleteId)
+      .populate("user", "_id")
+      .lean();
+    if (!athlete) return res.status(404).json({ message: "Athlete not found" });
 
-    const { requesterId, requesterRole } = await getRequester(req);
+    const requesterId = req.user._id.toString();
+    const requesterRole = await getUserRole(requesterId);
 
-    // allow athlete himself or coach of athlete or admin
     let allowed = false;
-    if (requesterRole === 'admin') allowed = true;
-    if (requesterRole === 'athlete' || requesterRole === 'player') {
-      if (athlete.user && athlete.user._id.toString() === requesterId) allowed = true;
-    }
-    if (requesterRole === 'coach') {
-      const coach = await Coach.findOne({ user: requesterId });
-      if (coach && coach.athletes.map(a => a.toString()).includes(athlete._id.toString())) allowed = true;
+    if (
+      requesterRole === "athlete" &&
+      athlete.user &&
+      athlete.user._id.toString() === requesterId
+    )
+      allowed = true;
+    if (requesterRole === "coach") {
+      const coach = await Coach.findOne({ user: requesterId })
+        .select("athletes")
+        .lean();
+      if (
+        coach &&
+        coach.athletes.map((a) => a.toString()).includes(athlete._id.toString())
+      )
+        allowed = true;
     }
 
-    if (!allowed) return res.status(401).json({ message: 'Not authorized to view these sessions' });
+    if (!allowed)
+      return res
+        .status(401)
+        .json({ message: "Not authorized to view these sessions" });
 
     const sessions = await TrainingSession.find({ athlete: athleteId })
       .sort({ date: -1 })
-      .populate({ path: 'coach', populate: { path: 'user', select: 'name email' } });
+      .populate({
+        path: "coach",
+        populate: { path: "user", select: "name email" },
+      })
+      .lean();
 
     res.json(sessions);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error', error: err.message });
+    console.error("getSessionsByAthlete error", err);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 };
 
-// GET /api/sessions/my  (sessions for current authenticated user)
+// GET /api/sessions/my
 const getMySessions = async (req, res) => {
   try {
-    const { requesterId, requesterRole } = await getRequester(req);
+    const requesterId = req.user._id.toString();
+    const requesterRole = await getUserRole(requesterId);
 
-    if (requesterRole === 'athlete' || requesterRole === 'player') {
-      const athlete = await Athlete.findOne({ user: requesterId });
-      if (!athlete) return res.status(404).json({ message: 'Athlete profile not found' });
-      const sessions = await TrainingSession.find({ athlete: athlete._id }).sort({ date: -1 });
+    if (requesterRole === "athlete") {
+      const athlete = await Athlete.findOne({ user: requesterId })
+        .select("_id")
+        .lean();
+      if (!athlete)
+        return res.status(404).json({ message: "Athlete profile not found" });
+      const sessions = await TrainingSession.find({ athlete: athlete._id })
+        .sort({ date: -1 })
+        .lean();
       return res.json(sessions);
     }
 
-    if (requesterRole === 'coach') {
-      const coach = await Coach.findOne({ user: requesterId });
-      if (!coach) return res.status(404).json({ message: 'Coach profile not found' });
-      // sessions where coach is the coach OR sessions for athletes in coach.athletes
+    if (requesterRole === "coach") {
+      const coach = await Coach.findOne({ user: requesterId })
+        .select("athletes _id")
+        .lean();
+      if (!coach)
+        return res.status(404).json({ message: "Coach profile not found" });
+
       const sessions = await TrainingSession.find({
-        $or: [
-          { coach: coach._id },
-          { athlete: { $in: coach.athletes } }
-        ]
-      }).sort({ date: -1 }).populate({ path: 'athlete', populate: { path: 'user', select: 'name email' } });
+        $or: [{ coach: coach._id }, { athlete: { $in: coach.athletes } }],
+      })
+        .sort({ date: -1 })
+        .populate({
+          path: "athlete",
+          populate: { path: "user", select: "name email" },
+        })
+        .lean();
+
       return res.json(sessions);
     }
 
-    return res.status(401).json({ message: 'Not authorized' });
+    return res.status(401).json({ message: "Not authorized" });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error', error: err.message });
+    console.error("getMySessions error", err);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 };
 
@@ -154,41 +185,70 @@ const getMySessions = async (req, res) => {
 const updateSession = async (req, res) => {
   try {
     const session = await TrainingSession.findById(req.params.id);
-    if (!session) return res.status(404).json({ message: 'Session not found' });
+    if (!session) return res.status(404).json({ message: "Session not found" });
 
-    const athlete = await Athlete.findById(session.athlete).populate('user');
-    if (!athlete) return res.status(404).json({ message: 'Athlete not found' });
+    const athlete = await Athlete.findById(session.athlete)
+      .populate("user", "_id")
+      .lean();
+    if (!athlete) return res.status(404).json({ message: "Athlete not found" });
 
-    const { requesterId, requesterRole } = await getRequester(req);
+    const requesterId = req.user._id.toString();
+    const requesterRole = await getUserRole(requesterId);
 
-    // permission: session can be updated by the athlete (owner) or the coach assigned to it
     let allowed = false;
-    if (requesterRole === 'admin') allowed = true;
-    if (requesterRole === 'athlete' || requesterRole === 'player') {
-      if (athlete.user && athlete.user._id.toString() === requesterId) allowed = true;
-    }
-    if (requesterRole === 'coach') {
-      const coach = await Coach.findOne({ user: requesterId });
-      if (coach && (session.coach && session.coach.toString() === coach._id.toString())) allowed = true;
-      // also allow if coach manages the athlete
-      if (coach && coach.athletes.map(a => a.toString()).includes(athlete._id.toString())) allowed = true;
+    if (
+      requesterRole === "athlete" &&
+      athlete.user &&
+      athlete.user._id.toString() === requesterId
+    )
+      allowed = true;
+    if (requesterRole === "coach") {
+      const coach = await Coach.findOne({ user: requesterId })
+        .select("athletes _id")
+        .lean();
+      if (
+        coach &&
+        session.coach &&
+        session.coach.toString() === coach._id.toString()
+      )
+        allowed = true;
+      if (
+        coach &&
+        coach.athletes.map((a) => a.toString()).includes(athlete._id.toString())
+      )
+        allowed = true;
     }
 
-    if (!allowed) return res.status(401).json({ message: 'Not authorized to update this session' });
+    if (!allowed)
+      return res
+        .status(401)
+        .json({ message: "Not authorized to update this session" });
 
-    // fields to update
     const { type, durationMinutes, metrics, notes, date } = req.body;
     if (type) session.type = type;
-    if (durationMinutes !== undefined) session.durationMinutes = durationMinutes;
+    if (durationMinutes !== undefined)
+      session.durationMinutes = durationMinutes;
     if (metrics !== undefined) session.metrics = metrics;
     if (notes !== undefined) session.notes = notes;
     if (date) session.date = new Date(date);
 
     await session.save();
-    res.json(session);
+
+    const updated = await TrainingSession.findById(session._id)
+      .populate({
+        path: "athlete",
+        populate: { path: "user", select: "name email" },
+      })
+      .populate({
+        path: "coach",
+        populate: { path: "user", select: "name email" },
+      })
+      .lean();
+
+    res.json(updated);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error', error: err.message });
+    console.error("updateSession error", err);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 };
 
@@ -196,31 +256,48 @@ const updateSession = async (req, res) => {
 const deleteSession = async (req, res) => {
   try {
     const session = await TrainingSession.findById(req.params.id);
-    if (!session) return res.status(404).json({ message: 'Session not found' });
+    if (!session) return res.status(404).json({ message: "Session not found" });
 
-    const athlete = await Athlete.findById(session.athlete).populate('user');
+    const athlete = await Athlete.findById(session.athlete)
+      .populate("user", "_id")
+      .lean();
+    const requesterId = req.user._id.toString();
+    const requesterRole = await getUserRole(requesterId);
 
-    const { requesterId, requesterRole } = await getRequester(req);
-
-    // allow athlete (owner), coach assigned to athlete, or admin
     let allowed = false;
-    if (requesterRole === 'admin') allowed = true;
-    if (requesterRole === 'athlete' || requesterRole === 'player') {
-      if (athlete.user && athlete.user._id.toString() === requesterId) allowed = true;
-    }
-    if (requesterRole === 'coach') {
-      const coach = await Coach.findOne({ user: requesterId });
-      if (coach && (session.coach && session.coach.toString() === coach._id.toString())) allowed = true;
-      if (coach && coach.athletes.map(a => a.toString()).includes(athlete._id.toString())) allowed = true;
+    if (
+      requesterRole === "athlete" &&
+      athlete.user &&
+      athlete.user._id.toString() === requesterId
+    )
+      allowed = true;
+    if (requesterRole === "coach") {
+      const coach = await Coach.findOne({ user: requesterId })
+        .select("athletes _id")
+        .lean();
+      if (
+        coach &&
+        session.coach &&
+        session.coach.toString() === coach._id.toString()
+      )
+        allowed = true;
+      if (
+        coach &&
+        coach.athletes.map((a) => a.toString()).includes(athlete._id.toString())
+      )
+        allowed = true;
     }
 
-    if (!allowed) return res.status(401).json({ message: 'Not authorized to delete this session' });
+    if (!allowed)
+      return res
+        .status(401)
+        .json({ message: "Not authorized to delete this session" });
 
-    await session.remove();
-    res.json({ message: 'Session deleted' });
+    await session.deleteOne();
+    res.json({ message: "Session deleted" });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error', error: err.message });
+    console.error("deleteSession error", err);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 };
 
@@ -229,5 +306,5 @@ module.exports = {
   getSessionsByAthlete,
   getMySessions,
   updateSession,
-  deleteSession
+  deleteSession,
 };
